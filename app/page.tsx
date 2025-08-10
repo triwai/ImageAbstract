@@ -1,7 +1,6 @@
 'use client'
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createWorker, Worker } from 'tesseract.js'
 
 function classNames(...a: (string | false | null | undefined)[]) {
     return a.filter(Boolean).join(' ')
@@ -199,10 +198,10 @@ export default function Page() {
     const [error, setError] = useState<string>('')
     const [enableTranslate, setEnableTranslate] = useState<boolean>(false)
     const [toLang, setToLang] = useState<string>('ja')
-    const [ocrLang, setOcrLang] = useState<string>('en') // OCR言語選択
+    const [ocrLang, setOcrLang] = useState<string>('en')
     const [ocrProgress, setOcrProgress] = useState<number>(0)
     const inputRef = useRef<HTMLInputElement>(null)
-    const workerRef = useRef<Worker | null>(null)
+    const workerRef = useRef<any>(null)
 
     useEffect(() => {
         if (!file) return
@@ -211,28 +210,32 @@ export default function Page() {
         return () => URL.revokeObjectURL(url)
     }, [file])
 
-    // Tesseract Worker の初期化
-    const initializeWorker = useCallback(async (): Promise<TesseractWorker> => {
+    // Tesseract Worker の初期化（動的インポート）
+    const initializeWorker = useCallback(async () => {
         if (workerRef.current) {
             return workerRef.current
         }
 
-        const worker = await createWorker('eng', 1, {
-            logger: m => {
-                if (m.status === 'recognizing text') {
-                    setOcrProgress(Math.round(m.progress * 100))
+        try {
+            // 動的インポートでTesseract.jsを読み込み
+            const { createWorker } = await import('tesseract.js')
+
+            const tessLang = ocrLanguages[ocrLang] || 'eng'
+
+            const worker = await createWorker(tessLang, 1, {
+                logger: m => {
+                    if (m.status === 'recognizing text') {
+                        setOcrProgress(Math.round(m.progress * 100))
+                    }
                 }
-            }
-        })
+            })
 
-        // 言語が変更された場合は再初期化
-        const tessLang = ocrLanguages[ocrLang] || 'eng'
-        if (tessLang !== 'eng') {
-            await worker.reinitialize(tessLang)
+            workerRef.current = worker
+            return worker
+        } catch (err) {
+            console.error('Failed to initialize OCR worker:', err)
+            throw new Error('OCRエンジンの初期化に失敗しました')
         }
-
-        workerRef.current = worker
-        return worker
     }, [ocrLang])
 
     const onPick = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -242,7 +245,7 @@ export default function Page() {
                 setError('画像ファイルを選択してください。')
                 return
             }
-            if (f.size > 10 * 1024 * 1024) { // 10MBに拡大（ローカル処理なので）
+            if (f.size > 10 * 1024 * 1024) {
                 setError('ファイルサイズは10MBまでです。')
                 return
             }
@@ -340,7 +343,7 @@ export default function Page() {
     useEffect(() => {
         return () => {
             if (workerRef.current) {
-                workerRef.current.terminate()
+                workerRef.current.terminate?.()
                 workerRef.current = null
             }
         }
@@ -464,7 +467,7 @@ export default function Page() {
             </div>
 
             <footer className="text-center text-white/50 text-xs mt-6">
-                Made by Triwai
+                Made by Triwai - ブラウザ内OCR・プライバシー保護
             </footer>
         </div>
     )
