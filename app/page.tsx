@@ -30,19 +30,16 @@ const ocrLanguages: Record<string, string> = {
 function LanguagePicker({
                             value,
                             onChange,
-                            disabled,
-                            label
+                            disabled
                         }: {
     value: string
     onChange: (code: string) => void
     disabled?: boolean
-    label?: string
 }) {
     const [open, setOpen] = useState(false)
     const [activeIndex, setActiveIndex] = useState<number>(() => Math.max(0, languages.findIndex(l => l.code === value)))
     const btnRef = useRef<HTMLButtonElement>(null)
     const popRef = useRef<HTMLDivElement>(null)
-    const overlayRef = useRef<HTMLDivElement>(null)
 
     const selected = useMemo(() => languages.find(l => l.code === value) ?? languages[0], [value])
 
@@ -64,18 +61,6 @@ function LanguagePicker({
         }
         document.addEventListener('keydown', handler)
         return () => document.removeEventListener('keydown', handler)
-    }, [open])
-
-    // Body scroll lock when dropdown is open
-    useEffect(() => {
-        if (open) {
-            document.body.style.overflow = 'hidden'
-        } else {
-            document.body.style.overflow = ''
-        }
-        return () => {
-            document.body.style.overflow = ''
-        }
     }, [open])
 
     const onKeyDownBtn = useCallback((e: React.KeyboardEvent<HTMLButtonElement>) => {
@@ -120,140 +105,90 @@ function LanguagePicker({
     }, [onChange])
 
     return (
-        <>
-            {/* Backdrop blur overlay */}
-            <div
-                ref={overlayRef}
+        <div className="relative">
+            <button
+                ref={btnRef}
+                type="button"
+                onClick={() => !disabled && setOpen(o => !o)}
+                onKeyDown={onKeyDownBtn}
+                disabled={disabled}
+                aria-haspopup="listbox"
+                aria-expanded={open}
                 className={classNames(
-                    'fixed inset-0 z-30 transition-all duration-300',
-                    open
-                        ? 'backdrop-blur-md bg-black/20 opacity-100 pointer-events-auto'
-                        : 'opacity-0 pointer-events-none'
+                    'group inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm min-w-[160px]',
+                    'border border-white/15 bg-white/5 hover:bg-white/10',
+                    'shadow-glass hover:shadow-lg transition-all',
+                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-holo-400/60',
+                    'disabled:opacity-50 disabled:cursor-not-allowed'
                 )}
-                onClick={() => setOpen(false)}
-            />
-
-            <div className="relative">
-                {label && (
-                    <label className="block text-sm font-medium text-white/80 mb-2">
-                        {label}
-                    </label>
-                )}
-
-                <button
-                    ref={btnRef}
-                    type="button"
-                    onClick={() => !disabled && setOpen(o => !o)}
-                    onKeyDown={onKeyDownBtn}
-                    disabled={disabled}
-                    aria-haspopup="listbox"
-                    aria-expanded={open}
+            >
+                <span className="text-lg">{selected.flag}</span>
+                <span className="font-medium flex-1 text-left">{selected.label}</span>
+                <svg
                     className={classNames(
-                        'group relative inline-flex items-center gap-3 rounded-xl px-4 py-3 text-sm min-w-[140px]',
-                        'border border-white/20 bg-white/8 hover:bg-white/12',
-                        'shadow-lg hover:shadow-xl transition-all duration-200',
-                        'focus:outline-none focus-visible:ring-2 focus-visible:ring-holo-400/60',
-                        'disabled:opacity-50 disabled:cursor-not-allowed',
-                        open ? 'z-50 bg-white/15 shadow-2xl ring-2 ring-holo-400/40' : ''
+                        'w-4 h-4 text-white/60 transition-transform duration-200',
+                        open ? 'rotate-180' : ''
                     )}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
                 >
-                    <span className="text-xl">{selected.flag}</span>
-                    <div className="flex-1 text-left">
-                        <div className="font-medium text-white">{selected.label}</div>
-                        <div className="text-xs text-white/60">{selected.code.toUpperCase()}</div>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+            </button>
+
+            {/* Dropdown */}
+            <div
+                ref={popRef}
+                tabIndex={-1}
+                onKeyDown={onKeyDownList}
+                className={classNames(
+                    'absolute z-50 mt-2 w-64 origin-top-right',
+                    open ? 'scale-100 opacity-100 pointer-events-auto' : 'scale-95 opacity-0 pointer-events-none',
+                    'transition transform duration-150'
+                )}
+                role="listbox"
+                aria-activedescendant={languages[activeIndex]?.code}
+            >
+                <div className="rounded-xl border border-white/15 bg-white/10 backdrop-blur-md shadow-glass overflow-hidden">
+                    <div className="p-2 max-h-64 overflow-auto custom-scroll">
+                        {languages.map((l, i) => {
+                            const active = i === activeIndex
+                            const selectedItem = l.code === value
+                            return (
+                                <button
+                                    key={l.code}
+                                    id={l.code}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={selectedItem}
+                                    onMouseEnter={() => setActiveIndex(i)}
+                                    onClick={() => selectLang(l.code)}
+                                    className={classNames(
+                                        'w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left',
+                                        'transition',
+                                        active ? 'bg-white/20' : 'hover:bg-white/10',
+                                        selectedItem ? 'ring-1 ring-holo-400/50' : ''
+                                    )}
+                                >
+                                    <span className="text-xl">{l.flag}</span>
+                                    <div className="flex-1">
+                                        <div className="text-sm font-medium">{l.label}</div>
+                                        <div className="text-xs text-white/60">{l.code}</div>
+                                    </div>
+                                    {selectedItem && (
+                                        <span className="ml-auto text-holo-200">●</span>
+                                    )}
+                                </button>
+                            )
+                        })}
                     </div>
-                    <svg
-                        className={classNames(
-                            'w-4 h-4 text-white/60 transition-transform duration-200',
-                            open ? 'rotate-180' : ''
-                        )}
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                    >
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                </button>
-
-                {/* Dropdown */}
-                <div
-                    ref={popRef}
-                    tabIndex={-1}
-                    onKeyDown={onKeyDownList}
-                    className={classNames(
-                        'absolute z-40 mt-3 w-72 origin-top',
-                        open
-                            ? 'scale-100 opacity-100 pointer-events-auto'
-                            : 'scale-95 opacity-0 pointer-events-none',
-                        'transition-all duration-200 ease-out'
-                    )}
-                    role="listbox"
-                    aria-activedescendant={languages[activeIndex]?.code}
-                >
-                    <div className="rounded-2xl border border-white/25 bg-white/15 backdrop-blur-xl shadow-2xl overflow-hidden ring-1 ring-white/10">
-                        <div className="p-3">
-                            <div className="text-xs font-semibold text-white/80 mb-3 px-3">
-                                言語を選択
-                            </div>
-                            <div className="max-h-64 overflow-auto custom-scroll space-y-1">
-                                {languages.map((l, i) => {
-                                    const active = i === activeIndex
-                                    const selectedItem = l.code === value
-                                    return (
-                                        <button
-                                            key={l.code}
-                                            id={l.code}
-                                            type="button"
-                                            role="option"
-                                            aria-selected={selectedItem}
-                                            onMouseEnter={() => setActiveIndex(i)}
-                                            onClick={() => selectLang(l.code)}
-                                            className={classNames(
-                                                'w-full flex items-center gap-4 px-4 py-3 rounded-xl text-left',
-                                                'transition-all duration-150',
-                                                active
-                                                    ? 'bg-white/20 shadow-lg transform scale-[1.02]'
-                                                    : 'hover:bg-white/10',
-                                                selectedItem
-                                                    ? 'bg-holo-gradient/20 ring-2 ring-holo-400/50 shadow-lg'
-                                                    : ''
-                                            )}
-                                        >
-                                            <span className="text-2xl">{l.flag}</span>
-                                            <div className="flex-1">
-                                                <div className="text-sm font-medium text-white">
-                                                    {l.label}
-                                                </div>
-                                                <div className="text-xs text-white/70">
-                                                    {l.code.toUpperCase()}
-                                                </div>
-                                            </div>
-                                            {selectedItem && (
-                                                <div className="flex items-center justify-center w-6 h-6 rounded-full bg-holo-400/80">
-                                                    <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                    </svg>
-                                                </div>
-                                            )}
-                                        </button>
-                                    )
-                                })}
-                            </div>
-                        </div>
-                        <div className="border-t border-white/15 bg-white/5 px-4 py-3">
-                            <div className="text-[10px] text-white/60 flex items-center gap-2">
-                                <kbd className="px-1.5 py-0.5 text-[9px] font-mono bg-white/10 rounded border border-white/20">↑↓</kbd>
-                                <span>移動</span>
-                                <kbd className="px-1.5 py-0.5 text-[9px] font-mono bg-white/10 rounded border border-white/20">Enter</kbd>
-                                <span>決定</span>
-                                <kbd className="px-1.5 py-0.5 text-[9px] font-mono bg-white/10 rounded border border-white/20">Esc</kbd>
-                                <span>閉じる</span>
-                            </div>
-                        </div>
+                    <div className="border-t border-white/10 p-2 text-[10px] text-white/60">
+                        ↑/↓ で移動・Enter で決定・Esc で閉じる
                     </div>
                 </div>
             </div>
-        </>
+        </div>
     )
 }
 
@@ -447,116 +382,87 @@ export default function Page() {
                             <img src={preview} alt="preview" className="w-full h-full object-contain" />
                         ) : (
                             <div className="text-center p-10 text-white/70">
+                                <div className="text-5xl mb-4">🖼️</div>
                                 <p className="mb-2">画像をドラッグ&ドロップ、または「画像を選択」</p>
                                 <p className="text-xs">PNG/JPG/WebP 最大 10MB（ローカル処理）</p>
                             </div>
                         )}
                     </div>
 
-                    <div className="flex flex-col gap-6">
-                        <div className="space-y-4">
-                            <LanguagePicker
-                                value={ocrLang}
-                                onChange={setOcrLang}
-                                disabled={loading}
-                                label="OCR言語"
-                            />
+                    <div className="flex flex-col gap-4">
+                        <div className="flex items-center gap-3 flex-wrap">
+                            <div className="flex items-center gap-2">
+                                <span className="text-sm text-white/70">OCR言語:</span>
+                                <LanguagePicker
+                                    value={ocrLang}
+                                    onChange={setOcrLang}
+                                    disabled={loading}
+                                />
+                            </div>
 
-                            <button
-                                onClick={extractText}
-                                disabled={!file || loading}
-                                className="w-full btn-primary disabled:opacity-50 py-3 text-base font-semibold"
-                            >
+                            <button onClick={extractText} disabled={!file || loading} className="btn-primary disabled:opacity-50">
                                 {loading ? `抽出中... ${ocrProgress}%` : '文字を抽出'}
                             </button>
-                        </div>
 
-                        <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium text-white/80">翻訳機能</span>
                             <button
                                 onClick={() => { setEnableTranslate(v => !v); if (!enableTranslate) setTranslated(''); }}
-                                className={classNames(
-                                    'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
-                                    enableTranslate ? 'bg-holo-gradient' : 'bg-white/20'
-                                )}
+                                className="btn-ghost"
                             >
-                                <span
-                                    className={classNames(
-                                        'inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition-transform',
-                                        enableTranslate ? 'translate-x-6' : 'translate-x-1'
-                                    )}
-                                />
+                                翻訳 {enableTranslate ? 'ON' : 'OFF'}
                             </button>
-                        </div>
 
-                        {enableTranslate && (
-                            <div className="space-y-4">
+                            {enableTranslate && (
                                 <LanguagePicker
                                     value={toLang}
                                     onChange={setToLang}
                                     disabled={!text && !loading}
-                                    label="翻訳先言語"
                                 />
+                            )}
 
-                                <button
-                                    onClick={translateText}
-                                    disabled={!text || tLoading}
-                                    className="w-full btn-primary disabled:opacity-50 py-3 text-base font-semibold"
-                                >
-                                    {tLoading ? '翻訳中...' : '翻訳する'}
+                            {enableTranslate && (
+                                <button onClick={translateText} disabled={!text || tLoading} className="btn-primary disabled:opacity-50">
+                                    {tLoading ? '翻訳中…' : '翻訳する'}
                                 </button>
-                            </div>
-                        )}
+                            )}
+                        </div>
 
                         {loading && ocrProgress > 0 && (
-                            <div className="w-full bg-white/10 rounded-full h-3 overflow-hidden">
+                            <div className="w-full bg-white/10 rounded-full h-2">
                                 <div
-                                    className="bg-holo-gradient h-full rounded-full transition-all duration-300"
+                                    className="bg-holo-gradient h-2 rounded-full transition-all duration-300"
                                     style={{ width: `${ocrProgress}%` }}
                                 />
                             </div>
                         )}
 
                         {error && (
-                            <div className="p-4 rounded-xl bg-red-500/10 border border-red-400/20 text-red-300 text-sm">
-                                {error}
-                            </div>
+                            <div className="text-sm text-red-300">{error}</div>
                         )}
 
-                        <section className="space-y-4">
-                            <div className="rounded-xl border border-white/15 bg-white/5 p-4">
-                                <div className="flex items-center justify-between mb-3">
-                                    <h3 className="font-medium text-white">抽出結果</h3>
+                        <section className="grid gap-4">
+                            <div className="rounded-xl border border-white/15 bg-white/5 p-3">
+                                <div className="flex items-center justify-between mb-2">
+                                    <h3 className="font-medium">抽出結果</h3>
                                     <div className="flex gap-2">
-                                        <button onClick={() => copy(text)} className="btn-ghost text-xs">コピー</button>
-                                        <button onClick={() => download(text)} className="btn-ghost text-xs">保存</button>
+                                        <button onClick={() => copy(text)} className="btn-ghost">コピー</button>
+                                        <button onClick={() => download(text)} className="btn-ghost">ダウンロード</button>
                                     </div>
                                 </div>
-                                <textarea
-                                    value={text}
-                                    onChange={(e) => setText(e.target.value)}
-                                    placeholder="ここに抽出結果が表示されます"
-                                    className="w-full h-40 bg-transparent outline-none resize-y text-white/90 placeholder-white/40"
-                                />
+                                <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="ここに抽出結果が表示されます" className="w-full h-40 bg-transparent outline-none resize-y" />
                             </div>
 
                             {enableTranslate && (
-                                <div className="rounded-xl border border-white/15 bg-white/5 p-4">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <h3 className="font-medium text-white">
+                                <div className="rounded-xl border border-white/15 bg-white/5 p-3">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <h3 className="font-medium">
                                             翻訳結果 ({languages.find(l => l.code === toLang)?.label})
                                         </h3>
                                         <div className="flex gap-2">
-                                            <button onClick={() => copy(translated)} className="btn-ghost text-xs">コピー</button>
-                                            <button onClick={() => download(translated, 'translated.txt')} className="btn-ghost text-xs">保存</button>
+                                            <button onClick={() => copy(translated)} className="btn-ghost">コピー</button>
+                                            <button onClick={() => download(translated, 'translated.txt')} className="btn-ghost">ダウンロード</button>
                                         </div>
                                     </div>
-                                    <textarea
-                                        value={translated}
-                                        onChange={(e) => setTranslated(e.target.value)}
-                                        placeholder="ここに翻訳結果が表示されます"
-                                        className="w-full h-40 bg-transparent outline-none resize-y text-white/90 placeholder-white/40"
-                                    />
+                                    <textarea value={translated} onChange={(e) => setTranslated(e.target.value)} placeholder="ここに翻訳結果が表示されます" className="w-full h-40 bg-transparent outline-none resize-y" />
                                 </div>
                             )}
                         </section>
@@ -565,7 +471,7 @@ export default function Page() {
             </div>
 
             <footer className="text-center text-white/50 text-xs mt-6">
-                Made by Triwai
+                Made by Triwai - ブラウザ内OCR・プライバシー保護
             </footer>
         </div>
     )
