@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createWorker, Worker } from 'tesseract.js'
 
 function classNames(...a: (string | false | null | undefined)[]) {
     return a.filter(Boolean).join(' ')
@@ -16,6 +17,16 @@ const languages: Lang[] = [
     { code: 'fr', label: 'Français', flag: '🇫🇷' },
     { code: 'es', label: 'Español',  flag: '🇪🇸' }
 ]
+
+// OCR言語マッピング (Tesseract.js用)
+const ocrLanguages: Record<string, string> = {
+    ja: 'jpn',
+    en: 'eng',
+    zh: 'chi_sim',
+    ko: 'kor',
+    fr: 'fra',
+    es: 'spa'
+}
 
 function LanguagePicker({
                             value,
@@ -33,7 +44,6 @@ function LanguagePicker({
 
     const selected = useMemo(() => languages.find(l => l.code === value) ?? languages[0], [value])
 
-    // 外側クリックで閉じる
     useEffect(() => {
         const handler = (e: MouseEvent) => {
             if (!open) return
@@ -45,7 +55,6 @@ function LanguagePicker({
         return () => document.removeEventListener('mousedown', handler)
     }, [open])
 
-    // Escape で閉じる
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
             if (!open) return
@@ -61,7 +70,6 @@ function LanguagePicker({
             e.preventDefault()
             setOpen(true)
             setActiveIndex(Math.max(0, languages.findIndex(l => l.code === value)))
-            // 次のフレームでポップアップにフォーカス
             requestAnimationFrame(() => {
                 popRef.current?.focus()
             })
@@ -127,7 +135,6 @@ function LanguagePicker({
                 />
             </button>
 
-            {/* Dropdown */}
             <div
                 ref={popRef}
                 tabIndex={-1}
@@ -192,7 +199,10 @@ export default function Page() {
     const [error, setError] = useState<string>('')
     const [enableTranslate, setEnableTranslate] = useState<boolean>(false)
     const [toLang, setToLang] = useState<string>('ja')
+    const [ocrLang, setOcrLang] = useState<string>('en') // OCR言語選択
+    const [ocrProgress, setOcrProgress] = useState<number>(0)
     const inputRef = useRef<HTMLInputElement>(null)
+    const workerRef = useRef<Worker | null>(null)
 
     useEffect(() => {
         if (!file) return
@@ -201,6 +211,30 @@ export default function Page() {
         return () => URL.revokeObjectURL(url)
     }, [file])
 
+    // Tesseract Worker の初期化
+    const initializeWorker = useCallback(async (): Promise<TesseractWorker> => {
+        if (workerRef.current) {
+            return workerRef.current
+        }
+
+        const worker = await createWorker('eng', 1, {
+            logger: m => {
+                if (m.status === 'recognizing text') {
+                    setOcrProgress(Math.round(m.progress * 100))
+                }
+            }
+        })
+
+        // 言語が変更された場合は再初期化
+        const tessLang = ocrLanguages[ocrLang] || 'eng'
+        if (tessLang !== 'eng') {
+            await worker.reinitialize(tessLang)
+        }
+
+        workerRef.current = worker
+        return worker
+    }, [ocrLang])
+
     const onPick = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         const f = e.target.files?.[0]
         if (f) {
@@ -208,8 +242,8 @@ export default function Page() {
                 setError('画像ファイルを選択してください。')
                 return
             }
-            if (f.size > 5 * 1024 * 1024) {
-                setError('ファイルサイズは5MBまでです。')
+            if (f.size > 10 * 1024 * 1024) { // 10MBに拡大（ローカル処理なので）
+                setError('ファイルサイズは10MBまでです。')
                 return
             }
             setError('')
@@ -227,8 +261,8 @@ export default function Page() {
                 setError('画像ファイルをドロップしてください。')
                 return
             }
-            if (f.size > 5 * 1024 * 1024) {
-                setError('ファイルサイズは5MBまでです。')
+            if (f.size > 10 * 1024 * 1024) {
+                setError('ファイルサイズは10MBまでです。')
                 return
             }
             setError('')
@@ -242,32 +276,28 @@ export default function Page() {
         e.preventDefault()
     }, [])
 
+    // OCR実行（クライアントサイド）
     const extractText = useCallback(async () => {
         if (!file) return
         setLoading(true)
         setError('')
         setText('')
         setTranslated('')
+        setOcrProgress(0)
+
         try {
-            const form = new FormData()
-            form.append('file', file)
-            const res = await fetch('/api/extract', {
-                method: 'POST',
-                body: form
-            })
-            if (!res.ok) {
-                const data = await res.json().catch(() => ({ error: '抽出に失敗しました。'}))
-                throw new Error(data.error || '抽出に失敗しました。')
-            }
-            const data = await res.json() as { text: string }
-            setText(data.text || '')
+            const worker = await initializeWorker()
+            const { data: { text } } = await worker.recognize(file)
+            setText(text.trim())
         } catch (e: any) {
-            setError(e.message || '抽出に失敗しました。')
+            setError(e.message || '文字抽出に失敗しました。')
         } finally {
             setLoading(false)
+            setOcrProgress(0)
         }
-    }, [file])
+    }, [file, initializeWorker])
 
+    // 翻訳（DeepseekのText APIを使用）
     const translateText = useCallback(async () => {
         if (!text) return
         setTLoading(true)
@@ -306,18 +336,28 @@ export default function Page() {
         URL.revokeObjectURL(url)
     }, [])
 
+    // クリーンアップ
+    useEffect(() => {
+        return () => {
+            if (workerRef.current) {
+                workerRef.current.terminate()
+                workerRef.current = null
+            }
+        }
+    }, [])
+
     return (
         <div className="w-full max-w-5xl">
             <div className={classNames('glass-card holo-border rounded-2xl p-6 md:p-10', 'shadow-glass')}>
                 <header className="flex items-center justify-between gap-4">
                     <div>
                         <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">ImageAbstract</h1>
-                        <p className="text-white/70 text-sm md:text-base">Webで画像の文字を抽出（Deepseek対応）</p>
-                        <p className="text-white/50 text-xs">https://github.com/triwai/ImageAbstract</p>
+                        <p className="text-white/70 text-sm md:text-base">ブラウザ内GPU加速OCRで画像の文字を抽出</p>
+                        <p className="text-white/50 text-xs">クライアントサイド処理・プライバシー保護</p>
                     </div>
                     <div className="flex items-center gap-2">
                         <button onClick={() => inputRef.current?.click()} className="btn-primary">画像を選択</button>
-                        <a className="btn-ghost" href="https://vercel.com/new" target="_blank" rel="noreferrer">Vercelでデプロイ</a>
+                        <a className="btn-ghost" href="https://github.com/triwai/ImageAbstract" target="_blank" rel="noreferrer">GitHub</a>
                     </div>
                 </header>
 
@@ -327,7 +367,7 @@ export default function Page() {
                     onDrop={onDrop}
                     onDragOver={onDragOver}
                     className={classNames(
-                        'mt-r6 grid md:grid-cols-2 gap-6',
+                        'mt-6 grid md:grid-cols-2 gap-6',
                     )}
                 >
                     <div className="rounded-xl border border-white/15 bg-white/5 min-h-72 flex items-center justify-center overflow-hidden">
@@ -335,22 +375,31 @@ export default function Page() {
                             <img src={preview} alt="preview" className="w-full h-full object-contain" />
                         ) : (
                             <div className="text-center p-10 text-white/70">
-                                <div className="text-5xl mb-4">🫧</div>
+                                <div className="text-5xl mb-4">🖼️</div>
                                 <p className="mb-2">画像をドラッグ&ドロップ、または「画像を選択」</p>
-                                <p className="text-xs">PNG/JPG 最大 5MB</p>
+                                <p className="text-xs">PNG/JPG/WebP 最大 10MB（ローカル処理）</p>
                             </div>
                         )}
                     </div>
 
                     <div className="flex flex-col gap-4">
                         <div className="flex items-center gap-3 flex-wrap">
+                            <div className="flex items-center gap-2">
+                                <span className="text-sm text-white/70">OCR言語:</span>
+                                <LanguagePicker
+                                    value={ocrLang}
+                                    onChange={setOcrLang}
+                                    disabled={loading}
+                                />
+                            </div>
+
                             <button onClick={extractText} disabled={!file || loading} className="btn-primary disabled:opacity-50">
-                                {loading ? '抽出中…' : '文字を抽出'}
+                                {loading ? `抽出中... ${ocrProgress}%` : '文字を抽出'}
                             </button>
+
                             <button
                                 onClick={() => { setEnableTranslate(v => !v); if (!enableTranslate) setTranslated(''); }}
-                                className={enableTranslate ? 'btn-primary' : 'btn-ghost'}
-                                aria-pressed={enableTranslate}
+                                className="btn-ghost"
                             >
                                 翻訳 {enableTranslate ? 'ON' : 'OFF'}
                             </button>
@@ -369,6 +418,15 @@ export default function Page() {
                                 </button>
                             )}
                         </div>
+
+                        {loading && ocrProgress > 0 && (
+                            <div className="w-full bg-white/10 rounded-full h-2">
+                                <div
+                                    className="bg-holo-gradient h-2 rounded-full transition-all duration-300"
+                                    style={{ width: `${ocrProgress}%` }}
+                                />
+                            </div>
+                        )}
 
                         {error && (
                             <div className="text-sm text-red-300">{error}</div>
