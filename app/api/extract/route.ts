@@ -1,70 +1,70 @@
-import { NextRequest } from 'next/server'
+// TypeScript
+import { NextResponse } from 'next/server'
 
-export const runtime = 'nodejs'
+const BASE_URL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com'
+const VISION_MODEL = process.env.DEEPSEEK_VISION_MODEL || 'deepseek-vl2'
+const API_KEY = process.env.DEEPSEEK
 
-export async function POST(req: NextRequest) {
-  try {
-    const key = process.env.DEEPSEEK
-    if (!key) {
-      return Response.json({ error: 'Server misconfiguration: DEEPSEEK is not set.' }, { status: 500 })
-    }
+export const runtime = 'nodejs' // Buffer/atob/btoa不要、Nodeランタイム明示
 
-    const form = await req.formData()
-    const file = form.get('file')
-    if (!file || !(file instanceof Blob)) {
-      return Response.json({ error: '画像ファイルが見つかりません。' }, { status: 400 })
-    }
-
-    const type = (file as Blob).type || 'application/octet-stream'
-    if (!type.startsWith('image/')) {
-      return Response.json({ error: '画像ファイルを送信してください。' }, { status: 400 })
-    }
-
-    const size = (file as Blob).size || 0
-    if (size > 5 * 1024 * 1024) {
-      return Response.json({ error: 'ファイルサイズは5MBまでです。' }, { status: 400 })
-    }
-
-    const buffer = Buffer.from(await (file as Blob).arrayBuffer())
-    const b64 = buffer.toString('base64')
-    const dataUrl = `data:${type};base64,${b64}`
-
-    const baseUrl = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com'
-    const visionModel = process.env.DEEPSEEK_VISION_MODEL || 'deepseek-vl2'
-
-    const payload = {
-      model: visionModel,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'input_text', text: 'Extract all textual content from this image. Return plain text only without commentary or formatting.' },
-            { type: 'input_image', image_url: { url: dataUrl } }
-          ]
+export async function POST(req: Request) {
+    try {
+        if (!API_KEY) {
+            return NextResponse.json({ error: 'Server misconfig: missing DEEPSEEK' }, { status: 500 })
         }
-      ],
-      temperature: 0
+
+        const form = await req.formData()
+        const file = form.get('file')
+        if (!(file instanceof File)) {
+            return NextResponse.json({ error: 'file is required' }, { status: 400 })
+        }
+        if (!file.type.startsWith('image/')) {
+            return NextResponse.json({ error: 'file must be image/*' }, { status: 400 })
+        }
+        if (file.size > 5 * 1024 * 1024) {
+            return NextResponse.json({ error: 'file is too large (<=5MB)' }, { status: 400 })
+        }
+
+        // ファイルを base64 化
+        const buf = Buffer.from(await file.arrayBuffer())
+        const b64 = buf.toString('base64')
+        const mime = file.type || 'image/png'
+        const dataUrl = `data:${mime};base64,${b64}`
+
+        // Deepseek Vision へ: messages[0].content は配列（text + image_url）
+        const body = {
+            model: VISION_MODEL,
+            messages: [
+                {
+                    role: 'user',
+                    content: [
+                        { type: 'text', text: 'Extract all readable text from the image. Return plain text only.' },
+                        { type: 'image_url', image_url: { url: dataUrl } }
+                    ]
+                }
+            ],
+            // max_tokens: 2048, // 必要なら
+            // temperature: 0
+        }
+
+        const res = await fetch(`${BASE_URL}/v1/chat/completions`, {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body)
+        })
+
+        if (!res.ok) {
+            const text = await res.text().catch(() => '')
+            return NextResponse.json({ error: `Deepseek Vision ${res.status}: ${text}` }, { status: 502 })
+        }
+
+        const json = await res.json()
+        const out = json?.choices?.[0]?.message?.content ?? ''
+        return NextResponse.json({ text: out })
+    } catch (err: any) {
+        return NextResponse.json({ error: err?.message || 'unexpected error' }, { status: 500 })
     }
-
-    const r = await fetch(`${baseUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${key}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    })
-
-    if (!r.ok) {
-      const errText = await r.text()
-      return Response.json({ error: `Deepseek API error: ${r.status} ${errText}` }, { status: 502 })
-    }
-
-    const json = await r.json()
-    const text: string = json?.choices?.[0]?.message?.content || ''
-
-    return Response.json({ text })
-  } catch (e: any) {
-    return Response.json({ error: e?.message || 'サーバーエラーが発生しました。' }, { status: 500 })
-  }
 }

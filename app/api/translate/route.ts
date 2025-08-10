@@ -1,51 +1,53 @@
-import { NextRequest } from 'next/server'
+// TypeScript
+import { NextResponse } from 'next/server'
 
-export const runtime = 'nodejs'
+const BASE_URL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com'
+const TEXT_MODEL = process.env.DEEPSEEK_TEXT_MODEL || 'deepseek-chat'
+const API_KEY = process.env.DEEPSEEK
 
-export async function POST(req: NextRequest) {
-  try {
-    const key = process.env.DEEPSEEK
-    if (!key) {
-      return Response.json({ error: 'Server misconfiguration: DEEPSEEK is not set.' }, { status: 500 })
+export async function POST(req: Request) {
+    try {
+        if (!API_KEY) {
+            return NextResponse.json({ error: 'Server misconfig: missing DEEPSEEK' }, { status: 500 })
+        }
+
+        const { text, toLang } = await req.json().catch(() => ({}))
+        if (!text || typeof text !== 'string') {
+            return NextResponse.json({ error: 'text is required' }, { status: 400 })
+        }
+        if (!toLang || typeof toLang !== 'string') {
+            return NextResponse.json({ error: 'toLang is required' }, { status: 400 })
+        }
+
+        // Text モデルへは content を「文字列」で送る
+        const prompt = `Translate the following text into ${toLang}. Respond with translated text only, no extra notes:\n\n${text}`
+
+        const body = {
+            model: TEXT_MODEL,
+            messages: [
+                { role: 'user', content: prompt }
+            ],
+            // temperature: 0
+        }
+
+        const res = await fetch(`${BASE_URL}/v1/chat/completions`, {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body)
+        })
+
+        if (!res.ok) {
+            const errText = await res.text().catch(() => '')
+            return NextResponse.json({ error: `Deepseek Text ${res.status}: ${errText}` }, { status: 502 })
+        }
+
+        const json = await res.json()
+        const out = json?.choices?.[0]?.message?.content ?? ''
+        return NextResponse.json({ text: out })
+    } catch (err: any) {
+        return NextResponse.json({ error: err?.message || 'unexpected error' }, { status: 500 })
     }
-
-    const { text, toLang } = await req.json().catch(() => ({})) as { text?: string, toLang?: string }
-    if (!text || typeof text !== 'string' || text.trim().length === 0) {
-      return Response.json({ error: '翻訳するテキストが空です。' }, { status: 400 })
-    }
-
-    const target = (toLang || 'ja').trim()
-    if (target.length > 12) {
-      return Response.json({ error: '言語コードが不正です。' }, { status: 400 })
-    }
-
-    const baseUrl = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com'
-    const textModel = process.env.DEEPSEEK_TEXT_MODEL || 'deepseek-chat'
-
-    const messages = [
-      { role: 'system', content: 'You are a professional translator. Return only the translated text without notes.' },
-      { role: 'user', content: `Translate the following into ${target}.\n\nText:\n${text}` }
-    ]
-
-    const r = await fetch(`${baseUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${key}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ model: textModel, messages, temperature: 0 })
-    })
-
-    if (!r.ok) {
-      const errText = await r.text()
-      return Response.json({ error: `Deepseek API error: ${r.status} ${errText}` }, { status: 502 })
-    }
-
-    const json = await r.json()
-    const translated: string = json?.choices?.[0]?.message?.content || ''
-
-    return Response.json({ text: translated })
-  } catch (e: any) {
-    return Response.json({ error: e?.message || 'サーバーエラーが発生しました。' }, { status: 500 })
-  }
 }
