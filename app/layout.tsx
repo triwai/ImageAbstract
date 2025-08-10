@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
   title: 'ImageAbstract',
-  description: 'Apple-like holographic UI to extract text from images using Deepseek AI. Optional translation included.',
+  description: 'Image to Text.',
   metadataBase: new URL('https://example.com')
 }
 
