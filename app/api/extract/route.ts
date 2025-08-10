@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
           role: 'user',
           content: [
             { type: 'input_text', text: 'Extract all textual content from this image. Return plain text only without commentary or formatting.' },
-            { type: 'input_image', image_url: dataUrl }
+            { type: 'input_image', image_url: { url: dataUrl } }
           ]
         }
       ],

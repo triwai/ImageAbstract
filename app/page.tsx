@@ -349,7 +349,8 @@ export default function Page() {
                             </button>
                             <button
                                 onClick={() => { setEnableTranslate(v => !v); if (!enableTranslate) setTranslated(''); }}
-                                className="btn-ghost"
+                                className={enableTranslate ? 'btn-primary' : 'btn-ghost'}
+                                aria-pressed={enableTranslate}
                             >
                                 翻訳 {enableTranslate ? 'ON' : 'OFF'}
                             </button>
