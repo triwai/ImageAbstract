@@ -327,7 +327,7 @@ export default function Page() {
                     onDrop={onDrop}
                     onDragOver={onDragOver}
                     className={classNames(
-                        'mt-6 grid md:grid-cols-2 gap-6',
+                        'mt-r6 grid md:grid-cols-2 gap-6',
                     )}
                 >
                     <div className="rounded-xl border border-white/15 bg-white/5 min-h-72 flex items-center justify-center overflow-hidden">
