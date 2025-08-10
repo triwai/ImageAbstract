@@ -1,3 +1,4 @@
+
 import { NextResponse } from 'next/server'
 
 const BASE_URL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com'
@@ -28,46 +29,48 @@ export async function POST(req: Request) {
         const buf = Buffer.from(await file.arrayBuffer())
         const b64 = buf.toString('base64')
 
-        // MIME タイプをそのまま使用（PNG、JPEG、WebP等に対応）
-        const mime = file.type || 'image/png'
-        const imageUrl = `data:${mime};base64,${b64}`
+        // 画像を小さくしてみる（デバッグ用）
+        if (b64.length > 500000) { // 約375KB以上の場合
+            return NextResponse.json({ error: 'Image too large for processing' }, { status: 400 })
+        }
 
-        // Deepseek Vision リクエストボディ
+        // Deepseek Vision の正確な形式を試す
         const requestBody = {
-            model: VISION_MODEL,
-            messages: [
+            "model": VISION_MODEL,
+            "messages": [
                 {
-                    role: "user",
-                    content: [
+                    "role": "user",
+                    "content": [
                         {
-                            type: "text",
-                            text: "Extract all readable text from the image. Return plain text only."
+                            "type": "text",
+                            "text": "Extract all readable text from this image."
                         },
                         {
-                            type: "image_url",
-                            image_url: {
-                                url: imageUrl
+                            "type": "image_url",
+                            "image_url": {
+                                "url": `data:${file.type};base64,${b64}`
                             }
                         }
                     ]
                 }
             ],
-            max_tokens: 4096,
-            temperature: 0
+            "max_tokens": 2048
         }
 
-        // デバッグ用
-        console.log('Image info:', {
-            originalType: file.type,
-            size: file.size,
-            mimeUsed: mime
+        // デバッグ情報
+        console.log('Request details:', {
+            model: VISION_MODEL,
+            imageType: file.type,
+            base64Length: b64.length,
+            jsonSize: JSON.stringify(requestBody).length
         })
 
         const response = await fetch(`${BASE_URL}/v1/chat/completions`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${API_KEY}`,
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
             },
             body: JSON.stringify(requestBody)
         })
@@ -75,7 +78,15 @@ export async function POST(req: Request) {
         const responseText = await response.text()
 
         if (!response.ok) {
-            console.error('Deepseek error response:', responseText)
+            console.error('Full error response:', responseText)
+
+            // もし Vision モデルに問題があれば、テキストモデルでエラーメッセージを返す
+            if (responseText.includes('model') || responseText.includes('vision')) {
+                return NextResponse.json({
+                    error: 'Vision model not available. Please check if deepseek-vl2 is accessible with your API key.'
+                }, { status: 502 })
+            }
+
             return NextResponse.json({
                 error: `Deepseek Vision ${response.status}: ${responseText}`
             }, { status: 502 })
