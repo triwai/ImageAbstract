@@ -1,4 +1,4 @@
-# ImageAbstract — Apple-like Holographic OCR (by Triwi)
+# ImageAbstract — Apple-like Holographic OCR (by Triwai)
 
 A beautiful, Apple‑like holographic UI (Vercel-quality) to extract text from images using OCR & Deepseek AI translation.
 Built with Next.js 14 (App Router), TypeScript, and Tailwind CSS.
