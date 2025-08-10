@@ -38,8 +38,8 @@ export async function POST(req: NextRequest) {
         {
           role: 'user',
           content: [
-            { type: 'text', text: 'Extract all textual content from this image. Return plain text only without commentary or formatting.' },
-            { type: 'image_url', image_url: { url: dataUrl } }
+            { type: 'input_text', text: 'Extract all textual content from this image. Return plain text only without commentary or formatting.' },
+            { type: 'input_image', image_url: dataUrl }
           ]
         }
       ],
